@@ -1,0 +1,11 @@
+python-telegram-bot
+flask
+requests
+Pillow
+python-dotenv
+aiohttp
+apscheduler
+cachetools
+emoji
+pytz
+pytz-deprecation-shim
