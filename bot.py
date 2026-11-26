@@ -2143,8 +2143,8 @@ def api_login():
     if len(fails) >= 5:
         return jsonify(ok=False, error="محاولات كثيرة. انتظر 10 دقائق."), 429
     d = _body()
-    user_ok = secrets.compare_digest(str(d.get("username", "")), ADMIN_USERNAME)
-    pass_ok = check_password_hash(Settings.raw("admin_password_hash") or "", str(d.get("password", "")))
+    user_ok = secrets.compare_digest(str(d.get("username", "123")), ADMIN_USERNAME)
+    pass_ok = check_password_hash(Settings.raw("admin_password_hash") or "", str(d.get("password", "123")))
     if user_ok and pass_ok:
         _LOGIN_FAILS.pop(ip, None)
         session.clear()
