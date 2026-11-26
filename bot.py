@@ -2747,19 +2747,17 @@ async def handle_recommendation_selection(update: Update, context: ContextTypes.
 
 async def analyze_chart_image(update, context, image_path, candle, trade_time, symbol):
     """
-    V8.0 Professional - 3 نماذج متعاونة مع قوانين احترافية
-    النموذج 1: Vision (تحليل الصورة)
-    النموذج 2: Audit (تدقيق القرار)
-    النموذج 3: Summary (تلخيص نهائي)
+    V8.1 Professional - نظام الاحتراق الدقيق
+    - كشف احتراق حقيقي (Volume Climax + Wick Rejection + Momentum Decay)
+    - حساب النقاط برمجياً (لا نثق بالنموذج)
+    - قيم افتراضية ذكية للبيانات الناقصة
     """
     try:
         user_id = update.effective_user.id
         prev_context, prev_time = get_analysis_context(user_id)
         
-        # إنشاء رسالة انتظار
         wait_msg = await update.message.reply_text("🤔 جاري تحليل الصورة...")
         
-        # ضغط الصورة
         compressed_path = compress_image(image_path)
         base64_img = encode_image(compressed_path)
         
@@ -2767,16 +2765,15 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             await wait_msg.edit_text("❌ **خطأ في قراءة الصورة.**\nيرجى إرسال صورة واضحة.")
             return "❌ **خطأ في قراءة الصورة.**"
         
-        # الحصول على معلومات السيولة والتوقيت
+        # ============================================
+        # 1. الوقت والجلسة
+        # ============================================
         session_name, session_time, session_vol, user_tz = get_market_session(user_id)
         local_time = get_localized_time(user_id)
         current_hour = local_time.hour
         current_minute = local_time.minute
         current_second = local_time.second
         
-        # ============================================
-        # [V8.0 إصلاح #1] حساب دقيق لمدة الشمعة لجميع الفريمات
-        # ============================================
         candle_unit_map = {'S': 1, 'M': 60, 'H': 3600, 'D': 86400}
         candle_unit = candle[0]
         candle_value = int(candle[1:]) if candle[1:].isdigit() else 1
@@ -2792,53 +2789,42 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         momentum_boost = (seconds_remaining <= 10 and is_fast_frame)
         
         if seconds_remaining < max(3, candle_seconds * 0.1):
-            time_status = "⚡ حالة زخم متفجر (Ignition Phase)"
+            time_status = "⚡ حالة زخم متفجر"
         else:
-            time_status = "✅ توقيت مستقر للتحليل"
+            time_status = "✅ توقيت مستقر"
         
-        candle_closing_status = f"الوقت المتبقي: {seconds_remaining:.0f} ثانية"
-        if seconds_remaining < 5:
-            candle_closing_status += " ⚡ (قرب انفجار السعر - استعد للتبديل)"
-        elif seconds_remaining < 15:
-            candle_closing_status += " ⚠️ (مرحلة تأكيد الاتجاه)"
-        
-        # نظام الدرع الأساسي (Fundamental Shield)
+        # ============================================
+        # 2. الأخبار و Kill Zones
+        # ============================================
         news_impact = "🟢 منخفض"
         news_warning = ""
         news_risk_multiplier = 1.0
         
-        high_impact_hours = [
-            (14, 30), (16, 0), (20, 0),
-            (8, 0), (9, 0), (10, 0),
-            (2, 30), (4, 0),
-            (17, 30),
-        ]
-        
-        for news_hour, news_minute in high_impact_hours:
-            time_diff = abs((current_hour * 60 + current_minute) - (news_hour * 60 + news_minute))
-            if time_diff <= 60:
+        high_impact_hours = [(14,30),(16,0),(20,0),(8,0),(9,0),(10,0),(2,30),(4,0),(17,30)]
+        for nh, nm in high_impact_hours:
+            diff = abs((current_hour*60+current_minute) - (nh*60+nm))
+            if diff <= 60:
                 news_impact = "🔴 عالي جداً"
                 news_risk_multiplier = 2.5
-                news_warning = f"⚠️ **تحذير:** خبر اقتصادي قوي خلال ±60 دقيقة"
+                news_warning = "⚠️ **تحذير:** خبر اقتصادي قوي خلال ±60 دقيقة"
                 break
-            elif time_diff <= 120:
+            elif diff <= 120:
                 news_impact = "🟡 متوسط"
                 news_risk_multiplier = 1.5
-                news_warning = f"📢 **تنبيه:** اقتراب من وقت أخبار مهمة"
+                news_warning = "📢 **تنبيه:** اقتراب من وقت أخبار مهمة"
                 break
         
-        # الفلتر الزمني (Kill Zones)
         if 10 <= current_hour < 13:
-            kill_zone_status = "داخل منطقة القتل السعري (لندن 10-13 بالتوقيت المحلي)"
+            kill_zone_status = "داخل منطقة القتل (لندن 10-13)"
         elif 15 <= current_hour < 18:
-            kill_zone_status = "داخل منطقة القتل السعري (نيويورك 15-18 بالتوقيت المحلي)"
+            kill_zone_status = "داخل منطقة القتل (نيويورك 15-18)"
         elif 0 <= current_hour < 9 or current_hour >= 22:
-            kill_zone_status = "خارج منطقة القتل (جلسة آسيوية)"
+            kill_zone_status = "خارج منطقة القتل (آسيوية)"
         else:
             kill_zone_status = "خارج مناطق القتل الرئيسية"
         
         # ============================================
-        # [V8.0 إصلاح #2] market_mode لا يُلغى
+        # 3. market_mode
         # ============================================
         is_trap_minute = current_minute in [14, 29, 44, 59]
         
@@ -2856,14 +2842,9 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             last_minute_status = "STABLE_FLOW"
         
         # ============================================
-        # [V8.0 إصلاح #3] نافذة التنفيذ الذهبية لجميع الفريمات
+        # 4. النافذة الذهبية
         # ============================================
         def is_in_golden_execution_window(secs_passed, total_candle_secs):
-            """
-            النافذة الذهبية = 70% من عمر الشمعة
-            S5: 1-4s | S10: 2-8s | S15: 3-12s | S30: 5-25s
-            M1: 10-50s | M5: 50-250s | H1: 9-51min
-            """
             lower = max(1, int(total_candle_secs * 0.15))
             upper = int(total_candle_secs * 0.85)
             return lower <= secs_passed <= upper
@@ -2871,10 +2852,10 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         in_golden_window = is_in_golden_execution_window(seconds_passed, candle_seconds)
         
         # ============================================
-        # [V8.0 إصلاح #4] استخراج البيانات من رد النموذج
+        # 5. استخراج البيانات (مع قيم افتراضية ذكية)
         # ============================================
         def extract_chart_data(analysis_text):
-            """استخراج البيانات الرقمية بـ regex"""
+            """استخراج البيانات مع قيم افتراضية ذكية للبيانات الناقصة"""
             import re as _re
             data = {
                 'current_price': None, 'peak_price': None, 'bottom_price': None,
@@ -2884,6 +2865,12 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 'has_fvg': False, 'has_engulfing': False, 'engulfing_ratio': 0.0,
                 'is_at_historical_peak': False, 'is_at_historical_bottom': False,
                 'current_direction': 'UP', 'total_score': None,
+                'volume_estimated': False,  # هل الحجم افتراضي؟
+                'timeframe_alignment': 1,   # افتراضي: إطار واحد
+                'momentum_candles': 1,      # افتراضي: شمعة واحدة
+                'candle_color': 'unknown',
+                'candle_high': None, 'candle_low': None,
+                'prev_candle_body': None,
             }
             
             def _num(pattern, cast=float):
@@ -2910,7 +2897,10 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             v = _num(r'(?:ذيل|فتيلة)\s*سفل[يى][ة]?[:\s]*(\d+)%')
             if v is not None: data['lower_wick_ratio'] = min(1.0, v / 100.0)
             v = _num(r'حجم[:\s]*([\d.]+)x')
-            if v is not None: data['volume_ratio'] = v
+            if v is not None:
+                data['volume_ratio'] = v
+            else:
+                data['volume_estimated'] = True  # ← افتراضي
             v = _num(r'المجموع[:\s]*(\d+)\s*/\s*125', cast=int)
             if v is not None: data['total_score'] = v
             
@@ -2926,6 +2916,32 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             if _re.search(r'قاع\s*تاريخي', analysis_text):
                 data['is_at_historical_bottom'] = True
             
+            # لون الشمعة
+            if _re.search(r'شمعة\s*(?:الأخيرة)?[:\s]*(?:حمراء|red)', analysis_text) or 'حمراء' in analysis_text[:500]:
+                data['candle_color'] = 'red'
+                data['current_direction'] = 'DOWN'
+            elif _re.search(r'شمعة\s*(?:الأخيرة)?[:\s]*(?:خضراء|green)', analysis_text) or 'خضراء' in analysis_text[:500]:
+                data['candle_color'] = 'green'
+                data['current_direction'] = 'UP'
+            
+            # توافق الإطار
+            if _re.search(r'توافق\s*كامل|إطار\s*متوافق', analysis_text):
+                data['timeframe_alignment'] = 4
+            elif _re.search(r'توافق\s*جيد|3\s*من\s*4', analysis_text):
+                data['timeframe_alignment'] = 3
+            elif _re.search(r'توافق\s*متوسط|2\s*من\s*4', analysis_text):
+                data['timeframe_alignment'] = 2
+            elif _re.search(r'تضارب', analysis_text):
+                data['timeframe_alignment'] = 0
+            else:
+                data['timeframe_alignment'] = 1  # افتراضي
+            
+            # الزخم (عدد الشموع المتتالية)
+            if _re.search(r'3\s*شموع\s*متتالية|زخم\s*ثلاثي', analysis_text):
+                data['momentum_candles'] = 3
+            elif _re.search(r'شمعتان\s*متتاليتان|زخم\s*ثنائي', analysis_text):
+                data['momentum_candles'] = 2
+            
             if data['current_price'] and data['peak_price']:
                 data['distance_to_peak'] = abs(data['current_price'] - data['peak_price'])
                 data['is_at_historical_peak'] = data['distance_to_peak'] < 1.0
@@ -2936,14 +2952,203 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             return data
         
         # ============================================
-        # [V8.0 إصلاح #5] exclusionary_scan بدون تعارض منطقي
+        # 6. 🔥 كشف الاحتراق الدقيق (Burn/Exhaustion Detection)
+        # ============================================
+        def detect_exhaustion(chart_data):
+            """
+            كشف الاحتراق الحقيقي بناءً على 4 مؤشرات:
+            1. Volume Climax: حجم > 2.5x المتوسط
+            2. Wick Rejection: ذيل طويل > 50%
+            3. Momentum Decay: 3 شموع ممتلئة + شمعة عكسية
+            4. Body Collapse: جسم آخر شمعة < 40%
+            
+            يعيد: (burn_score 0-100, signals list, is_burning bool)
+            """
+            signals = []
+            burn_score = 0
+            
+            body = chart_data.get('candle_body_ratio', 0.5)
+            upper_wick = chart_data.get('upper_wick_ratio', 0.0)
+            lower_wick = chart_data.get('lower_wick_ratio', 0.0)
+            max_wick = max(upper_wick, lower_wick)
+            vol = chart_data.get('volume_ratio', 1.0)
+            is_vol_estimated = chart_data.get('volume_estimated', False)
+            momentum = chart_data.get('momentum_candles', 1)
+            color = chart_data.get('candle_color', 'unknown')
+            has_engulfing = chart_data.get('has_engulfing', False)
+            
+            # مؤشر 1: Volume Climax (0-30 نقطة)
+            if not is_vol_estimated:
+                if vol >= 3.0:
+                    burn_score += 30
+                    signals.append(f"🔥 ذروة حجم: {vol:.1f}x المتوسط (Climax)")
+                elif vol >= 2.5:
+                    burn_score += 25
+                    signals.append(f"🔥 حجم عالي: {vol:.1f}x")
+                elif vol >= 2.0:
+                    burn_score += 18
+                    signals.append(f"⚡ حجم مرتفع: {vol:.1f}x")
+                elif vol >= 1.5:
+                    burn_score += 10
+                    signals.append(f"📊 حجم نشط: {vol:.1f}x")
+            else:
+                # إذا الحجم افتراضي، لا نمنح نقاط احتراق
+                signals.append("ℹ️ الحجم غير متاح (افتراضي)")
+            
+            # مؤشر 2: Wick Rejection (0-25 نقطة)
+            if max_wick >= 0.6:
+                burn_score += 25
+                wick_type = "علوي" if upper_wick > lower_wick else "سفلي"
+                signals.append(f"🔥 رفض سعري قوي: ذيل {wick_type} {max_wick*100:.0f}%")
+            elif max_wick >= 0.5:
+                burn_score += 18
+                wick_type = "علوي" if upper_wick > lower_wick else "سفلي"
+                signals.append(f"⚠️ رفض سعري: ذيل {wick_type} {max_wick*100:.0f}%")
+            elif max_wick >= 0.4:
+                burn_score += 10
+                wick_type = "علوي" if upper_wick > lower_wick else "سفلي"
+                signals.append(f"📊 ذيل {wick_type} {max_wick*100:.0f}%")
+            
+            # مؤشر 3: Body Collapse (0-20 نقطة)
+            if body < 0.3:
+                burn_score += 20
+                signals.append(f"🔥 انهيار الجسم: {body*100:.0f}% (ضعف شديد)")
+            elif body < 0.4:
+                burn_score += 15
+                signals.append(f"⚠️ جسم ضعيف: {body*100:.0f}%")
+            elif body < 0.5:
+                burn_score += 8
+                signals.append(f"📊 جسم متوسط: {body*100:.0f}%")
+            
+            # مؤشر 4: Momentum Decay (0-25 نقطة)
+            if momentum >= 3:
+                if color in ('red', 'green'):
+                    # 3 شموع متتالية + شمعة عكسية = احتراق قوي
+                    if has_engulfing:
+                        burn_score += 25
+                        signals.append("🔥 احتراق زخم: 3 شموع + ابتلاع عكسي")
+                    elif body < 0.5:
+                        burn_score += 18
+                        signals.append("⚠️ احتراق زخم: 3 شموع + جسم ضعيف")
+                    else:
+                        burn_score += 10
+                        signals.append("📊 زخم قوي: 3 شموع")
+                else:
+                    burn_score += 10
+                    signals.append("📊 زخم قوي: 3 شموع")
+            elif momentum >= 2:
+                burn_score += 5
+                signals.append("📊 زخم ثنائي")
+            
+            # مؤشر 5: Engulfing (0-20 نقطة إضافية)
+            if has_engulfing:
+                eng_ratio = chart_data.get('engulfing_ratio', 0.0)
+                if eng_ratio >= 0.7:
+                    burn_score += 20
+                    signals.append(f"🔥 ابتلاع قوي: {eng_ratio*100:.0f}%")
+                elif eng_ratio >= 0.5:
+                    burn_score += 12
+                    signals.append(f"⚠️ ابتلاع: {eng_ratio*100:.0f}%")
+            
+            burn_score = min(100, burn_score)
+            is_burning = burn_score >= 50
+            
+            if not signals:
+                signals.append("✅ لا توجد إشارات احتراق")
+            
+            return burn_score, signals, is_burning
+        
+        # ============================================
+        # 7. 🔥 حساب النقاط برمجياً (مع نظام الاحتراق)
+        # ============================================
+        def calculate_score_v8_1(chart_data, in_golden_window, burn_score):
+            """
+            V8.1: حساب النقاط برمجياً (125 نقطة)
+            - إعادة توزيع الأوزان لنتائج واقعية
+            - خصم نقاط عند الاحتراق
+            - قيم افتراضية ذكية
+            """
+            score = 0
+            breakdown = {}
+            
+            # 1. الحجم (0-15 نقطة) - مخفض من 25
+            vol = chart_data.get('volume_ratio', 1.0)
+            if chart_data.get('volume_estimated'):
+                v_score = 8  # متوسط للبيانات غير المتاحة
+                breakdown['volume_note'] = "افتراضي"
+            elif vol >= 2.0:   v_score = 15
+            elif vol >= 1.5:   v_score = 12
+            elif vol >= 1.2:   v_score = 9
+            elif vol >= 1.0:   v_score = 5
+            else:              v_score = 0
+            score += v_score
+            breakdown['volume'] = v_score
+            
+            # 2. الجسم (0-30 نقطة) - مرفوع من 20
+            body = chart_data.get('candle_body_ratio', 0.5)
+            if body >= 0.9:   b_score = 30
+            elif body >= 0.75: b_score = 22
+            elif body >= 0.6:  b_score = 15
+            elif body >= 0.4:  b_score = 8
+            else:              b_score = 0
+            score += b_score
+            breakdown['body'] = b_score
+            
+            # 3. المسافة (0-30 نقطة) - مرفوع من 20
+            dist = min(chart_data.get('distance_to_peak', 100),
+                       chart_data.get('distance_to_bottom', 100))
+            if dist >= 15:   d_score = 30
+            elif dist >= 10: d_score = 24
+            elif dist >= 5:  d_score = 16
+            elif dist >= 3:  d_score = 8
+            else:            d_score = 0
+            score += d_score
+            breakdown['distance'] = d_score
+            
+            # 4. FVG (0-10 نقطة) - مخفض من 15
+            f_score = 10 if chart_data.get('has_fvg') else 0
+            score += f_score
+            breakdown['fvg'] = f_score
+            
+            # 5. النافذة (0-15 نقطة) - مرفوع من 10
+            w_score = 15 if in_golden_window else 5
+            score += w_score
+            breakdown['window'] = w_score
+            
+            # 6. توافق الإطار (0-10 نقطة) - مع افتراضي
+            alignment = chart_data.get('timeframe_alignment', 1)
+            t_score = min(10, alignment * 2.5)
+            score += int(t_score)
+            breakdown['timeframe'] = int(t_score)
+            
+            # 7. الزخم (0-15 نقطة) - مرفوع من 10
+            momentum = chart_data.get('momentum_candles', 1)
+            if momentum >= 3:   m_score = 15
+            elif momentum >= 2: m_score = 10
+            else:               m_score = 3  # نقاط أساسية
+            score += m_score
+            breakdown['momentum'] = m_score
+            
+            # 8. 🔥 خصم الاحتراق (0 إلى -40 نقطة)
+            burn_penalty = 0
+            if burn_score >= 70:
+                burn_penalty = -40  # احتراق خطير جداً
+            elif burn_score >= 50:
+                burn_penalty = -25  # احتراق متوسط
+            elif burn_score >= 30:
+                burn_penalty = -10  # احتراق خفيف
+            
+            score += burn_penalty
+            breakdown['burn_penalty'] = burn_penalty
+            
+            final_score = max(0, min(125, score))
+            return int(final_score), breakdown
+        
+        # ============================================
+        # 8. المسح الاستبعادي (V8.0 - لم يتغير)
         # ============================================
         def exclusionary_scan_v8(chart_data, candle_secs, secs_passed, secs_remaining,
-                                  is_trap_min, momentum_b, in_golden_win):
-            """
-            V8.0: مسح استبعادي بدون تعارض منطقي
-            يعيد (passed, reasons, reversal_signal)
-            """
+                                  is_trap_min, momentum_b, in_golden_win, burn_score):
             reasons = []
             reversal_signal = None
             
@@ -2955,7 +3160,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             vol = chart_data.get('volume_ratio', 1.0)
             has_fvg = chart_data.get('has_fvg', False)
             
-            # الحاجز 1: القمم/القيعان (فصل الحالتين)
             if is_peak:
                 trinity_ok = (vol >= 1.5 and body >= 0.9 and has_fvg)
                 if not trinity_ok:
@@ -2978,19 +3182,22 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 reversal_signal = "LIQUIDITY_TRAP_REVERSAL 🟢"
                 return False, reasons, reversal_signal
             
-            # الحاجز 2: الابتلاع
             if chart_data.get('engulfing_ratio', 0.0) > 0.5:
                 reasons.append(f"ابتلاع عكسي {chart_data['engulfing_ratio']*100:.0f}%")
                 reversal_signal = "IMMEDIATE_REVERSAL 🔄"
                 return False, reasons, reversal_signal
             
-            # الحاجز 3: الإجهاد
+            # 🔥 احتراق قوي = منع الدخول
+            if burn_score >= 70:
+                reasons.append(f"احتراق قوي ({burn_score}/100) - مخاطرة عالية")
+                reversal_signal = "EXHAUSTION_HOLD 🟡"
+                return False, reasons, reversal_signal
+            
             if vol > 3.0:
                 reasons.append(f"إجهاد سعري {vol:.1f}x")
                 reversal_signal = "EXHAUSTION_HOLD 🟡"
                 return False, reasons, reversal_signal
             
-            # الحاجز 4: الرفض السعري
             max_wick = max(chart_data.get('upper_wick_ratio', 0),
                            chart_data.get('lower_wick_ratio', 0))
             if max_wick > 0.6:
@@ -2998,7 +3205,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 reversal_signal = "REJECTION_HOLD 🟡"
                 return False, reasons, reversal_signal
             
-            # الحاجز 5: النافذة الذهبية
             if not in_golden_win:
                 lower = max(1, int(candle_secs * 0.15))
                 upper = int(candle_secs * 0.85)
@@ -3006,7 +3212,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 reversal_signal = "TIMING_HOLD 🟡"
                 return False, reasons, reversal_signal
             
-            # الحاجز 6: دقائق الغدر
             if is_trap_min and secs_remaining < 15 and not momentum_b:
                 reasons.append("دقيقة غدر بدون زخم")
                 reversal_signal = "TRAP_MINUTE_HOLD 🟡"
@@ -3014,7 +3219,9 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             
             return True, [], None
         
-        # ربط معطيات الإعدادات
+        # ============================================
+        # 9. إعدادات البرومبت
+        # ============================================
         if candle.startswith('S'):
             candle_category = "فريمات سريعة جداً (ثواني)"
         elif candle.startswith('M'):
@@ -3027,15 +3234,14 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             candle_category = "فريم غير معروف"
         
         if trade_time == "قصير (1m-15m)":
-            trading_strategy = "سكالبينج (Scalping)"; position_sizing = "حجم كبير + SL ضيق"
+            trading_strategy = "سكالبينج"; position_sizing = "حجم كبير + SL ضيق"
         elif trade_time == "متوسط (4h-Daily)":
-            trading_strategy = "سوينج (Swing)"; position_sizing = "حجم معتدل + SL متوسط"
+            trading_strategy = "سوينج"; position_sizing = "حجم معتدل + SL متوسط"
         elif trade_time == "طويل (Weekly-Monthly)":
-            trading_strategy = "موقف (Position)"; position_sizing = "حجم صغير + SL واسع"
+            trading_strategy = "موقف"; position_sizing = "حجم صغير + SL واسع"
         else:
             trading_strategy = trade_time; position_sizing = "افتراضي"
         
-        # فريم التحقق
         cv = candle[1:] if candle[1:].isdigit() else "1"
         if candle.startswith('S'):
             verification_timeframe = "S15" if cv in ['5','10','15'] else "S30"
@@ -3050,136 +3256,63 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             verification_timeframe = "M1"
         
         # ============================================
-        # [V8.0] البرومبت الرئيسي بنظام النقاط
+        # 10. البرومبت (يركز على استخراج البيانات، وليس القرار)
         # ============================================
-        SCORING_SECTION = """
-🎯 **نظام التقييم بالنقاط V8.0 (Score-Based) - الأهم**
+        DATA_EXTRACTION_PROMPT = f"""
+أنت محلل فني بصري خبير. مهمتك **فقط** استخراج البيانات من الصورة، وليس اتخاذ القرار.
 
-⚠️ **تحذير حرج:** لا ترفض الصفقة بسبب فشل شرط واحد. اجمع النقاط ثم قرر.
+🎯 **استخرج بدقة من الصورة:**
 
-📊 **جدول النقاط (الحد الأقصى 125):**
-
-| المعيار | الشرط | النقاط |
-|---------|-------|--------|
-| **قوة الحجم** | حجم ≥ 2x المتوسط | +25 |
-| | حجم بين 1.5x و 2x | +20 |
-| | حجم بين 1.2x و 1.5x | +15 |
-| | حجم بين 1.0x و 1.2x | +8 |
-| **شكل الشمعة** | جسم > 90% | +20 |
-| | جسم بين 70-90% | +12 |
-| | جسم بين 50-70% | +6 |
-| **مسافة الأمان** | المسافة من القمة/القاع ≥ 10 نقاط | +20 |
-| | المسافة بين 5-10 نقاط | +14 |
-| | المسافة بين 3-5 نقاط | +8 |
-| | المسافة < 3 نقاط | +0 |
-| **FVG** | وجود فجوة سعرية خلف الشمعة | +15 |
-| **نافذة التنفيذ** | داخل النافذة الذهبية | +10 |
-| | خارج النافذة | +3 |
-| **توافق الإطار الأكبر** | اتجاه متوافق | +10 |
-| **زخم متسارع** | 3 شموع بنفس الاتجاه بجسم > 70% | +10 |
-
-🎯 **القرار النهائي حسب النقاط:**
-
-| المجموع | القرار | الثقة |
-|---------|--------|-------|
-| ≥ 90 | **دخول قوي 💥** | 90-100% |
-| 70-89 | **دخول عادي 🟢/🔴** | 75-89% |
-| 50-69 | **دخول بحذر ⚡** | 60-74% |
-| 30-49 | **مراقبة 🟡** | 40-59% |
-| < 30 | **لا تداول 🚫** | < 40% |
-
-⚠️ **الاحتفاظ مسموح فقط في 4 حالات:**
-1. صورة غير قابلة للقراءة
-2. تضارب صريح (شمعة عكس كبيرة > 70%)
-3. نطاق عرضي تماماً (حجم < 0.8x، لا اتجاه)
-4. دقيقة غدر + ثواني < 15 + بدون زخم + خارج النافذة + نقاط < 30
-
-🚫 **يُمنع الاحتفاظ إذا:** 3 شموع متتالية بنفس اللون بأجسام > 70%، أو تجاوز مستوى ≥ 3 نقاط، أو حجم ≥ 1.5x.
-"""
-        
-        MAIN_PROMPT = f"""
-أنت محلل فني خبير في SMC + ICT + Wyckoff + Volume Profile.
-مهمتك تحليل الشارت المرفق وإصدار توصية بنظام **النقاط (Score-Based V8.0)**.
-
-🎯 **استخراج البيانات من الصورة فقط (إلزامي):**
-1. السعر الحالي (بدقة من المحور Y)
-2. القمة/القاع التاريخي (آخر 20-30 شمعة)
-3. المسافة بالنقاط = |السعر الحالي - القمة/القاع|
-4. آخر 5 شموع: اللون، الجسم، الذيول، الحجم النسبي (x من متوسط 20 شمعة)
-5. وجود FVG خلف الشمعة الأخيرة
-6. الوقت على ساعة المنصة
-
-{SCORING_SECTION}
+1. **السعر الحالي** (من المحور Y بدقة)
+2. **القمة/القاع التاريخي** (آخر 20-30 شمعة)
+3. **المسافة بالنقاط** = |السعر الحالي - القمة/القاع|
+4. **آخر 5 شموع:**
+   - اللون (أخضر/أحمر)
+   - نسبة الجسم (0-100%)
+   - نسبة الذيل العلوي (0-100%)
+   - نسبة الذيل السفلي (0-100%)
+   - الحجم النسبي (x من متوسط 20 شمعة) - إذا لم يكن واضحاً، اكتب "غير متاح"
+5. **FVG خلفي:** هل توجد فجوة سعرية خلف الشمعة الأخيرة؟ (نعم/لا)
+6. **ابتلاع عكسي:** هل الشمعة الأخيرة ابتلعت الشمعة السابقة؟ (نعم (النسبة%)/لا)
+7. **اتجاه الإطار الأكبر:** (صاعد/هابط/غير واضح)
+8. **عدد الشموع المتتالية** بنفس اللون (1، 2، 3+)
 
 📌 **المعطيات من النظام:**
 • الفريم: {candle} ({candle_category})
-• فريم التحقق: {verification_timeframe}
-• استراتيجية: {trading_strategy} | حجم: {position_sizing}
-• جلسة السوق: {session_name}
+• الجلسة: {session_name}
 • نمط السوق: {market_mode}
 • الثواني المنقضية: {seconds_passed:.0f}/{candle_seconds}
-• نافذة التنفيذ: {"داخل ✅" if in_golden_window else "خارج ❌"}
-• دقيقة غدر: {"نعم ⚠️" if is_trap_minute else "لا"}
-• زخم معزز: {"نعم" if momentum_boost else "لا"}
+• النافذة الذهبية: {"داخل ✅" if in_golden_window else "خارج ❌"}
 • الأخبار: {news_impact} {news_warning if news_warning else "(آمن)"}
-• Kill Zone: {kill_zone_status}
 
-⚠️ **قواعد الأمان (إرشادية - تخفض/ترفع النقاط):**
-1. ذيل طويل (>40%) عند القمة → فخ سيولة → بيع انعكاسي
-2. ابتلاع عكسي (>50%) → انعكاس فوري
-3. إجهاد (شمعة >3x المتوسط) → احتفاظ 🟡
-4. ذيل كلي >60% من الشمعة → احتفاظ 🟡
-5. نافذة خارج الذهبية → خصم 7 نقاط (لا يمنع)
+⚠️ **مهم جداً:**
+- لا تحسب نقاطاً، لا تعطِ قراراً، لا تقترح صفقة.
+- فقط استخرج البيانات كما هي.
+- إذا كانت بيانات غير واضحة، اكتب "غير متاح" أو "غير مؤكد".
 
-🎯 **التنسيق المطلوب للإجابة (إلزامي - التزم حرفياً):**
+🎯 **التنسيق المطلوب (إلزامي):**
 
-📊 **بيانات الشارت المستخرجة:**
+📊 **بيانات الشارت:**
 • السعر الحالي: [رقم]
 • القمة/القاع التاريخي: [رقم]
 • المسافة: [X.X] نقطة
-• الشمعة الأخيرة: [لون] | جسم: [%] | ذيل علوي: [%] | ذيل سفلي: [%] | حجم: [X.X]x
-• الشمعة -2: [لون] | جسم: [%] | حجم: [X.X]x
-• الشمعة -3: [لون] | جسم: [%] | حجم: [X.X]x
+• الشمعة الأخيرة: [لون] | جسم: [%] | ذيل علوي: [%] | ذيل سفلي: [%] | حجم: [X.X]x أو "غير متاح"
+• الشمعة -2: [لون] | جسم: [%] | حجم: [X.X]x أو "غير متاح"
+• الشمعة -3: [لون] | جسم: [%] | حجم: [X.X]x أو "غير متاح"
 • FVG خلفي: [نعم/لا]
 • ابتلاع عكسي: [نعم (X%)/لا]
 • اتجاه الإطار الأكبر: [صاعد/هابط/غير واضح]
+• عدد الشموع المتتالية: [1/2/3+]
 
-🎯 **حساب النقاط:**
-• الحجم: [X]/25
-• الجسم: [X]/20
-• المسافة: [X]/20
-• FVG: [X]/15
-• النافذة: [X]/10
-• توافق الإطار: [X]/10
-• الزخم: [X]/10
-• **المجموع: [XX]/125**
-
-📈 **القرار النهائي:**
-• **الإشارة:** [شراء 🟢 / بيع 🔴 / احتفاظ 🟡 / لا تداول 🚫]
-• **الثقة:** [XX]% ([💥/🔥/⚡/🟡/🚫])
-• **السبب الرئيسي:** [جملة واحدة]
-• **نوع الدخول:** [مباشر / إعادة اختبار / انعكاس فوري]
-
-📊 **خطة التنفيذ:**
-• **الدخول:** [سعر]
-• **TP1:** [سعر] ([مسافة] نقطة)
-• **TP2:** [سعر] ([مسافة] نقطة)
-• **TP3:** [سعر] ([مسافة] نقطة)
-• **وقف الخسارة:** [سعر] ([مسافة] نقطة)
-• **المخاطرة/العائد:** [1:X]
-
-⚠️ **تحذيرات:**
-• [أي تحذيرات]
-
-الآن قم بالتحليل وأجب بالتنسيق المطلوب فقط.
+الآن استخرج البيانات وأجب بالتنسيق المطلوب فقط.
 """
         
         headers = {"Authorization": f"Bearer {MISTRAL_KEY}", "Content-Type": "application/json"}
         
         # ============================================
-        # النموذج 1: MISTRAL_MODEL (Vision)
+        # 11. النموذج 1: استخراج البيانات فقط
         # ============================================
-        await wait_msg.edit_text("🔍 **المرحلة 1/3:** تحليل الصورة... 🖼️")
+        await wait_msg.edit_text("🔍 **المرحلة 1/2:** استخراج البيانات من الصورة... 🖼️")
         
         payload_1 = {
             "model": MISTRAL_MODEL,
@@ -3187,12 +3320,12 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 {
                     "role": "user", 
                     "content": [
-                        {"type": "text", "text": MAIN_PROMPT},
+                        {"type": "text", "text": DATA_EXTRACTION_PROMPT},
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}", "detail": "high"}}
                     ]
                 }
             ],
-            "max_tokens": 2000,
+            "max_tokens": 1500,
             "temperature": 0.0,
             "top_p": 1.0,
             "random_seed": 42
@@ -3201,16 +3334,22 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         response_1 = requests.post(MISTRAL_URL, headers=headers, json=payload_1, timeout=60)
         
         if response_1.status_code != 200:
-            print(f"Obeida Vision Error (Model 1): {response_1.status_code} - {response_1.text}")
+            print(f"Vision Error: {response_1.status_code} - {response_1.text}")
             await wait_msg.edit_text(f"❌ خطأ في التحليل: {response_1.status_code}")
-            raise Exception(f"خطأ في التحليل الأول: {response_1.status_code}")
+            raise Exception(f"خطأ في النموذج الأول: {response_1.status_code}")
         
-        initial_analysis = response_1.json()['choices'][0]['message']['content'].strip()
-        initial_analysis = clean_repeated_text(initial_analysis)
+        extraction_result = response_1.json()['choices'][0]['message']['content'].strip()
         
-        # استخراج البيانات + المسح الاستبعادي
-        chart_data = extract_chart_data(initial_analysis)
+        # ============================================
+        # 12. استخراج البيانات + كشف الاحتراق + حساب النقاط
+        # ============================================
+        chart_data = extract_chart_data(extraction_result)
+        burn_score, burn_signals, is_burning = detect_exhaustion(chart_data)
+        programmatic_score, score_breakdown = calculate_score_v8_1(
+            chart_data, in_golden_window, burn_score
+        )
         
+        # المسح الاستبعادي
         scan_passed, scan_reasons, reversal_signal = exclusionary_scan_v8(
             chart_data=chart_data,
             candle_secs=candle_seconds,
@@ -3218,145 +3357,119 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             secs_remaining=seconds_remaining,
             is_trap_min=is_trap_minute,
             momentum_b=momentum_boost,
-            in_golden_win=in_golden_window
+            in_golden_win=in_golden_window,
+            burn_score=burn_score
         )
         
-        # إضافة تحذير مبني على نتيجة المسح
-        if not scan_passed and scan_reasons:
-            initial_analysis += (
-                f"\n\n━━━━━━━━━━━━━━━━━━━━\n"
-                f"🚨 **تنبيه المسح الاستبعادي:**\n"
-                f"❌ **أسباب المنع:** {', '.join(scan_reasons)}\n"
-                f"🔄 **الإشارة المقترحة:** {reversal_signal or 'لا إشارة'}"
-            )
+        # ============================================
+        # 13. اتخاذ القرار برمجياً (لا نثق بالنموذج)
+        # ============================================
+        if programmatic_score >= 90 and not is_burning:
+            decision = "دخول قوي 💥"
+            confidence = 95
+            decision_emoji = "💥"
+        elif programmatic_score >= 75 and not is_burning:
+            decision = "دخول عادي 🟢"
+            confidence = 82
+            decision_emoji = "🔥"
+        elif programmatic_score >= 55:
+            decision = "دخول بحذر ⚡"
+            confidence = 68
+            decision_emoji = "⚡"
+        elif programmatic_score >= 35:
+            decision = "مراقبة 🟡"
+            confidence = 50
+            decision_emoji = "🟡"
+        else:
+            decision = "لا تداول 🚫"
+            confidence = 30
+            decision_emoji = "🚫"
+        
+        # إذا المسح الاستبعادي منع الصفقة
+        if not scan_passed:
+            decision = f"احتفاظ - {reversal_signal or 'سبب أمني'}"
+            decision_emoji = "🟡"
+            confidence = max(30, confidence - 20)
+        
+        # إذا احتراق قوي، خفض الثقة
+        if burn_score >= 70:
+            confidence = max(20, confidence - 30)
+            decision = "احتفاظ - احتراق قوي 🔥"
+            decision_emoji = "🟡"
         
         # ============================================
-        # النموذج 2: MISTRAL_MODEL_AUDIT (تدقيق)
+        # 14. التقرير النهائي (برمجي 100%)
         # ============================================
-        await wait_msg.edit_text("🔍 **المرحلة 2/3:** تدقيق القرار... 🔎")
+        burn_bar = "█" * int(burn_score / 10) + "░" * (10 - int(burn_score / 10))
         
-        audit_prompt = f"""
-أنت مدقق تحليل فني. راجع القرار التالي وحدد إذا كان منطقياً.
-
-📊 **البيانات المستخرجة:**
-- السعر الحالي: {chart_data.get('current_price', 'N/A')}
-- القمة/القاع: {chart_data.get('peak_price') or chart_data.get('bottom_price', 'N/A')}
-- المسافة: {chart_data.get('distance_to_peak', 100):.1f} نقطة
-- جسم الشمعة: {chart_data.get('candle_body_ratio', 0.5)*100:.0f}%
-- الحجم: {chart_data.get('volume_ratio', 1.0):.2f}x
-- FVG: {'نعم' if chart_data.get('has_fvg') else 'لا'}
-- ابتلاع: {chart_data.get('engulfing_ratio', 0)*100:.0f}%
-- النقاط المحسوبة: {chart_data.get('total_score', 0)}/125
-
-📈 **قرار النموذج الأول:**
-{initial_analysis[:1500]}
-
-🎯 **مهمتك:**
-1. هل القرار متوافق مع النقاط؟ (≥90=دخول قوي، 70-89=دخول، 50-69=بحذر، <30=احتفاظ)
-2. هل هناك تناقض؟ (مثل: نقاط 85 لكن القرار "احتفاظ")
-3. إذا كان هناك تناقض، اقترح القرار الصحيح.
-
-أجب بإيجاز:
-• **التدقيق:** [✅ متوافق / ⚠️ تناقض / ❌ خطأ]
-• **القرار الصحيح:** [شراء/بيع/احتفاظ]
-• **السبب:** [جملة واحدة]
-"""
+        score_breakdown_text = "\n".join([
+            f"  • الحجم: {score_breakdown.get('volume', 0)}/15" + (" (افتراضي)" if score_breakdown.get('volume_note') else ""),
+            f"  • الجسم: {score_breakdown.get('body', 0)}/30",
+            f"  • المسافة: {score_breakdown.get('distance', 0)}/30",
+            f"  • FVG: {score_breakdown.get('fvg', 0)}/10",
+            f"  • النافذة: {score_breakdown.get('window', 0)}/15",
+            f"  • الإطار: {score_breakdown.get('timeframe', 0)}/10",
+            f"  • الزخم: {score_breakdown.get('momentum', 0)}/15",
+            f"  • خصم الاحتراق: {score_breakdown.get('burn_penalty', 0)}",
+        ])
         
-        audit_payload = {
-            "model": MISTRAL_MODEL_AUDIT,
-            "messages": [{"role": "user", "content": audit_prompt}],
-            "max_tokens": 500,
-            "temperature": 0.0,
-            "top_p": 1.0,
-            "random_seed": 42
-        }
+        burn_signals_text = "\n".join(f"  {s}" for s in burn_signals)
         
-        audit_result = ""
-        try:
-            audit_response = requests.post(MISTRAL_URL, headers=headers, json=audit_payload, timeout=30)
-            if audit_response.status_code == 200:
-                audit_result = audit_response.json()['choices'][0]['message']['content'].strip()
-            else:
-                print(f"⚠️ Audit فشل: {audit_response.status_code}")
-        except Exception as e:
-            print(f"⚠️ خطأ في التدقيق: {e}")
-        
-        # ============================================
-        # النموذج 3: MODEL_SUMMARY (تلخيص نهائي)
-        # ============================================
-        await wait_msg.edit_text("🔍 **المرحلة 3/3:** إعداد التقرير النهائي... 📝")
-        
-        summary_prompt = f"""
-أنت محرر تقارير تحليل فني. ادمج التحليل والتدقيق في تقرير نهائي موجز ومنسق.
+        final_report = f"""
+📊 **V8.1 - نظام الاحتراق الدقيق**
 
-📊 **التحليل الأساسي:**
-{initial_analysis[:2000]}
+━━━━━━━━━━━━━━━━━━━━
+🔥 **مؤشر الاحتراق (Burn Score):**
+  `{burn_bar}` **{burn_score}/100**
+  {"⚠️ احتراق قوي - خطر دخول" if burn_score >= 70 else "⚠️ احتراق متوسط" if burn_score >= 50 else "✅ احتراق منخفض" if burn_score >= 30 else "✅ لا احتراق"}
 
-🔎 **التدقيق:**
-{audit_result if audit_result else 'لم يتوفر تدقيق'}
+  **إشارات الاحتراق:**
+{burn_signals_text}
 
-🎯 **مهمتك:**
-- إذا التدقيق قال "✅ متوافق" → أبقِ القرار كما هو
-- إذا قال "⚠️ تناقض" أو "❌ خطأ" → عدّل القرار حسب اقتراح التدقيق
-- أضف سطراً واحداً: "🔎 التدقيق: [متوافق/معدّل]"
+━━━━━━━━━━━━━━━━━━━━
+📈 **النقاط المحسوبة (برمجياً):** {programmatic_score}/125
 
-⚠️ **التنسيق المطلوب (التزم حرفياً):**
+{score_breakdown_text}
 
-📊 **ملخص البيانات:**
-• السعر: [رقم] | المسافة: [X.X] نقطة
-• الشمعة: [لون] | جسم [%] | حجم [X.X]x
-• FVG: [نعم/لا] | ابتلاع: [X%]
-
+━━━━━━━━━━━━━━━━━━━━
 🎯 **القرار النهائي:**
-• الإشارة: [شراء 🟢 / بيع 🔴 / احتفاظ 🟡 / لا تداول 🚫]
-• الثقة: [XX]% ([💥/🔥/⚡/🟡/🚫])
-• النقاط: [XX]/125
-• 🔎 التدقيق: [متوافق/معدّل]
+  • الإشارة: **{decision}**
+  • الثقة: **{confidence}%** {decision_emoji}
+  • نوع الدخول: {"فوري" if programmatic_score >= 75 else "بحذر" if programmatic_score >= 55 else "انتظار"}
 
-📊 **خطة التنفيذ:**
-• الدخول: [سعر]
-• TP1: [سعر] | TP2: [سعر] | TP3: [سعر]
-• وقف الخسارة: [سعر]
-• R:R: [1:X]
-
-⚠️ **تحذيرات:** [أي تحذيرات]
-
-أجب بالتنسيق أعلاه فقط.
+━━━━━━━━━━━━━━━━━━━━
+📊 **بيانات الشارت:**
+  • السعر: {chart_data.get('current_price', 'N/A')}
+  • القمة/القاع: {chart_data.get('peak_price') or chart_data.get('bottom_price', 'N/A')}
+  • المسافة: {chart_data.get('distance_to_peak', 100):.1f} نقطة
+  • الشمعة: {chart_data.get('candle_color', 'unknown')} | جسم {chart_data.get('candle_body_ratio', 0.5)*100:.0f}%
+  • الحجم: {chart_data.get('volume_ratio', 1.0):.2f}x {"(افتراضي)" if chart_data.get('volume_estimated') else ""}
+  • FVG: {'✅' if chart_data.get('has_fvg') else '❌'} | ابتلاع: {chart_data.get('engulfing_ratio', 0)*100:.0f}%
+  • توافق الإطار: {chart_data.get('timeframe_alignment', 1)}/4
+  • الزخم: {chart_data.get('momentum_candles', 1)} شموع
 """
         
-        summary_payload = {
-            "model": MODEL_SUMMARY,
-            "messages": [{"role": "user", "content": summary_prompt}],
-            "max_tokens": 800,
-            "temperature": 0.0,
-            "top_p": 1.0,
-            "random_seed": 42
-        }
+        if not scan_passed and scan_reasons:
+            final_report += f"""
+━━━━━━━━━━━━━━━━━━━━
+🚨 **تنبيه المسح الاستبعادي:**
+  ❌ {', '.join(scan_reasons)}
+  🔄 {reversal_signal or 'لا إشارة'}
+"""
         
-        final_analysis = initial_analysis  # fallback
-        try:
-            summary_response = requests.post(MISTRAL_URL, headers=headers, json=summary_payload, timeout=30)
-            if summary_response.status_code == 200:
-                final_analysis = summary_response.json()['choices'][0]['message']['content'].strip()
-            else:
-                print(f"⚠️ Summary فشل: {summary_response.status_code}")
-        except Exception as e:
-            print(f"⚠️ خطأ في التلخيص: {e}")
+        final_report = clean_repeated_text(final_report)
         
-        # حفظ السياق
-        final_analysis = clean_repeated_text(final_analysis)
-        save_analysis_context(user_id, final_analysis)
+        # ============================================
+        # 15. حفظ السياق والإرسال
+        # ============================================
+        save_analysis_context(user_id, final_report)
         
-        # الأزرار
         keyboard = [["📊 تحليل صورة"], ["⚙️ إعدادات التحليل"], ["📈 توصية"], ["🌍 دولتك"], ["الرجوع للقائمة الرئيسية"]]
         if user_id == ADMIN_ID:
             keyboard.append(["👑 لوحة التحكم"])
         
-        # تجميع النتيجة النهائية
         full_result = (
-            f"✅ **تم التحليل بنجاح - V8.0 (3 نماذج)**\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"{final_analysis}\n\n"
+            f"{final_report}\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
             f"🔧 **الإعدادات:**\n"
             f"• الفريم: {candle} | فريم التحقق: {verification_timeframe}\n"
@@ -3364,15 +3477,13 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
             f"• السوق: {market_mode}\n"
             f"• الثواني المنقضية: {seconds_passed:.0f}/{candle_seconds}\n"
             f"• النافذة الذهبية: {'داخل ✅' if in_golden_window else 'خارج ❌'}\n"
-            f"• النماذج: Vision → Audit → Summary\n"
             f"━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🤖 **Powered by - 🤯 Obeida Trading V8.0 🤯**"
+            f"🤖 **Obeida Trading V8.1 - نظام الاحتراق الدقيق**"
         )
         
         full_result = clean_repeated_text(full_result)
         formatted_result = format_as_copyable_code(full_result, "text")
         
-        # الإرسال
         if len(formatted_result) > 4000:
             parts = split_message_with_copy_support(full_result, max_length=3500)
             await wait_msg.edit_text(parts[0], parse_mode="Markdown")
@@ -3381,7 +3492,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         else:
             await wait_msg.edit_text(formatted_result, parse_mode="Markdown")
         
-        # الأزرار
         await update.message.reply_text(
             "📊 **اختر الإجراء التالي:**",
             reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
@@ -3391,13 +3501,13 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         
     except requests.exceptions.Timeout:
         if 'wait_msg' in locals():
-            await wait_msg.edit_text("⏱️ تجاوز الوقت المحدد إرسال الصورة. حاول مرة أخرى.")
+            await wait_msg.edit_text("⏱️ تجاوز الوقت المحدد. حاول مرة أخرى.")
         else:
-            await update.message.reply_text("⏱️ تجاوز الوقت المحدد إرسال الصورة. حاول مرة أخرى.")
+            await update.message.reply_text("⏱️ تجاوز الوقت المحدد.")
         return "⏱️ تجاوز الوقت المحدد"
     except Exception as e:
         print(f"❌ خطأ في تحليل الصورة: {traceback.format_exc()}")
-        error_msg = f"❌ **حدث خطأ في تحليل الصورة:** {str(e)[:200]}\nيرجى المحاولة مرة أخرى."
+        error_msg = f"❌ **حدث خطأ:** {str(e)[:200]}\nحاول مرة أخرى."
         if 'wait_msg' in locals():
             await wait_msg.edit_text(error_msg)
         else:
@@ -3405,140 +3515,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         return error_msg
     finally:
         for filepath in [image_path, compressed_path] if 'compressed_path' in locals() else [image_path]:
-            if os.path.exists(filepath):
-                try:
-                    os.remove(filepath)
-                except Exception as e:
-                    print(f"⚠️ خطأ في حذف الملف المؤقت: {e}")
-    
-    return MAIN_MENU
-
-async def handle_recommendation_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الصور في وضع التوصية"""
-    # التحقق من الاشتراك
-    if not await subscription_required(update, context):
-        return RECOMMENDATION_MODE
-    
-    user_id = update.effective_user.id
-    
-    # تسجيل استخدام
-    SubscriptionSystem.increment_usage(user_id, 'recommendation_photo')
-    
-    # الحصول على آخر عملة تم اختيارها
-    last_symbol = get_last_recommendation_symbol(context)
-    
-    wait_msg = await update.message.reply_text(f"📊 استنى شوي العملة: {last_symbol} قيد تحليل 🤌...")
-    
-    try:
-        # حفظ الصورة مؤقتاً
-        photo = await update.message.photo[-1].get_file()
-        timestamp = int(time.time())
-        image_path = os.path.join(IMAGE_CACHE_DIR, f"recommendation_{user_id}_{timestamp}.jpg")
-        await photo.download_to_drive(image_path)
-        
-        # الحصول على إعدادات المستخدم
-        candle, trade_time, _, _, _ = get_user_setting(user_id)
-        
-        if not candle or not trade_time:
-            await wait_msg.edit_text("❌ يجب ضبط الإعدادات أولاً. الرجاء استخدام 'إعدادات التحليل'.")
-            return RECOMMENDATION_MODE
-        
-        # تحليل الصورة
-        analysis_result = await analyze_chart_image(
-            update, 
-            context, 
-            image_path, 
-            candle, 
-            trade_time, 
-            last_symbol
-        )
-        
-        # تنسيق النتيجة مع دعم النسخ السريع
-        formatted_result = format_as_copyable_code(analysis_result, "text")
-        await wait_msg.edit_text(formatted_result, parse_mode="Markdown")
-                
-    except Exception as e:
-        print(f"❌ خطأ في تحليل صورة التوصية: {e}")
-        await wait_msg.edit_text("❌ حدث خطأ في معالجة الصورة. يرجى المحاولة مرة أخرى.")
-    
-    # عرض خيارات المتابعة
-    reply_keyboard = [[key] for key in CATEGORIES.keys()]
-    reply_keyboard.append(["الرجوع للقائمة الرئيسية"])
-    
-    await update.message.reply_text(
-        "🔽 **اختر قسم آخر أو العودة للقائمة الرئيسية:**",
-        reply_markup=ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True)
-    )
-    return RECOMMENDATION_MODE
-
-async def handle_photo_in_analyze_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الصور في وضع التحليل"""
-    return await handle_photo_analysis(update, context)
-
-async def handle_photo_analysis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """معالجة الصور للتحليل الفني المتقدم"""
-    # التحقق من الاشتراك
-    if not await subscription_required(update, context):
-        return MAIN_MENU
-    
-    user_id = update.effective_user.id
-    candle, trade_time, prev_context, prev_time, _ = get_user_setting(user_id)
-    
-    # تسجيل استخدام
-    SubscriptionSystem.increment_usage(user_id, 'photo_analysis')
-    
-    if not candle or not trade_time:
-        keyboard = [["⚙️ إعدادات التحليل"], ["الرجوع للقائمة الرئيسية"], ["🌍 دولتك"]]
-        if user_id == ADMIN_ID:
-            keyboard.append(["👑 لوحة التحكم"])
-        await update.message.reply_text(
-            "❌ **يجب ضبط الإعدادات أولاً**\n\n"
-            "الرجاء استخدام أزرار القائمة لضبط الإعدادات قبل تحليل الصور.",
-            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False),
-            parse_mode="Markdown"
-        )
-        return MAIN_MENU
-
-    wait_msg = await update.message.reply_text(" 📸 تم استلام الصورة بنجاح 📸")
-    photo = await update.message.photo[-1].get_file()
-    
-    timestamp = int(time.time())
-    original_path = os.path.join(IMAGE_CACHE_DIR, f"img_{user_id}_{timestamp}_original.jpg")
-    compressed_path = os.path.join(IMAGE_CACHE_DIR, f"img_{user_id}_{timestamp}_compressed.jpg")
-    
-    try:
-        await photo.download_to_drive(original_path)
-        compressed_path = compress_image(original_path)
-        base64_img = encode_image(compressed_path)
-        
-        if not base64_img:
-            await wait_msg.edit_text("❌ **خطأ في قراءة الصورة.**\nيرجى إرسال صورة واضحة.")
-            if os.path.exists(original_path):
-                os.remove(original_path)
-            if os.path.exists(compressed_path) and compressed_path != original_path:
-                os.remove(compressed_path)
-            return MAIN_MENU
-        
-        # تحليل الصورة باستخدام الدالة المحسنة
-        analysis_result = await analyze_chart_image(
-            update, 
-            context, 
-            original_path, 
-            candle, 
-            trade_time, 
-            "الشارت المرفق"
-        )
-        
-        # التحليل_result يحتوي بالفعل على النتيجة النهائية مع التنسيق
-        # تم التعامل مع إرسال النتيجة داخل الدالة analyze_chart_image
-        
-    except Exception as e:
-        print(f"❌ خطأ في تحليل الصورة: {traceback.format_exc()}")
-        keyboard = [["📊 تحليل صورة"], ["الرجوع للقائمة الرئيسية"]]
-        await wait_msg.edit_text(f"❌ **حدث خطأ في تحليل الصورة:** {str(e)[:200]}\nيرجى المحاولة مرة أخرى.")
-    finally:
-        # تنظيف الملفات المؤقتة
-        for filepath in [original_path, compressed_path]:
             if os.path.exists(filepath):
                 try:
                     os.remove(filepath)
