@@ -5550,6 +5550,13 @@ def get_stats_v2():
 def ping():
     return "PONG"
 
+async def post_init(application):
+    """تشغيل المهام الدورية بعد تهيئة البوت"""
+    asyncio.create_task(periodic_cleanup())
+    asyncio.create_task(backup_scheduler())
+    print("✅ تم تشغيل المهام الدورية (cleanup + backup)")
+
+
 def main():
     """الدالة الرئيسية - النسخة النهائية مع نظام المناطق الزمنية ولوحة تحكم محمية"""
     print("🤖 Starting Obeida Trading with Timezone Support and Secure Admin Panel ...")
@@ -5561,11 +5568,11 @@ def main():
     DataProtection.backup_database()
     DataProtection.backup_codes_db()
     
-    # تشغيل Flask مع نظام المصادقة
+    # تشغيل Flask مع نظام المصادقة (thread منفصل - لا يتأثر بـ asyncio)
     flask_thread = threading.Thread(target=run_flask_server, daemon=True)
     flask_thread.start()
     
-    # تنظيف جميع الملفات المؤقتة عند بدء التشغيل
+    # تنظيف الملفات المؤقتة عند بدء التشغيل
     print("🧹 جاري تنظيف الملفات المؤقتة عند بدء التشغيل...")
     try:
         if os.path.exists(IMAGE_CACHE_DIR):
@@ -5586,8 +5593,13 @@ def main():
     except Exception as e:
         print(f"⚠️ خطأ في تنظيف الملفات: {e}")
     
-    # إنشاء تطبيق Telegram
-    application = Application.builder().token(TOKEN).build()
+    # ============================================
+    # ✅ إنشاء تطبيق Telegram مع post_init
+    # ============================================
+    application = Application.builder()\
+        .token(TOKEN)\
+        .post_init(post_init)\
+        .build()
     
     # معالج المحادثة
     conv_handler = ConversationHandler(
@@ -5641,7 +5653,7 @@ def main():
         fallbacks=[
             CommandHandler('start', start),
             CommandHandler('cancel', cancel),
-            CommandHandler('me', show_my_id),  # ← جديد: يعمل في أي حالة
+            CommandHandler('me', show_my_id),  # ← أمر /me
         ],
         allow_reentry=True
     )
@@ -5649,40 +5661,19 @@ def main():
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("cancel", cancel))
-    application.add_handler(CommandHandler("me", show_my_id))  # ← جديد: تسجيل الأمر
+    application.add_handler(CommandHandler("me", show_my_id))  # ← أمر /me
     
     # إضافة معالج للأخطاء
     application.add_error_handler(error_handler)
     
-    # تعيين قائمة أوامر البوت (تظهر في القائمة الجانبية)
-    try:
-        async def _set_commands():
-            await application.bot.set_my_commands([
-                ("start", "بدء البوت"),
-                ("me", "عرض الأيدي الخاص بك"),
-                ("help", "مساعدة"),
-                ("cancel", "إلغاء"),
-            ])
-        # تشغيل في event loop مؤقت
-        import asyncio
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(_set_commands())
-        print("✅ تم تعيين قائمة الأوامر")
-    except Exception as e:
-        print(f"⚠️ فشل تعيين الأوامر: {e}")
-    
-    # تشغيل المهام الدورية
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.create_task(periodic_cleanup())
-    loop.create_task(backup_scheduler())
-    
     print("✅ Telegram Bot with Timezone Support and Secure Admin Panel ready ...")
     print(f"🌍 Admin Panel URL: http://localhost:8080/admin")
     
-    # تشغيل البوت
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # ✅ تشغيل البوت — run_polling ينشئ loop واحد فقط
+    application.run_polling(
+        allowed_updates=Update.ALL_TYPES,
+        drop_pending_updates=True
+    )
 
 
 if __name__ == "__main__":
