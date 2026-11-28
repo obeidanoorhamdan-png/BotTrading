@@ -309,7 +309,7 @@ class ActivationCodes:
         if sub_type not in ActivationCodes.SUBSCRIPTION_TYPES:
             return None
         # كود بصيغة OBEIDA-XXXX-XXXX
-        parts = ['ObeidaTrading']
+        parts = ['OBEIDA']
         for _ in range(2):
             parts.append(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)))
         code = '-'.join(parts)
