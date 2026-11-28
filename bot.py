@@ -309,7 +309,7 @@ class ActivationCodes:
         if sub_type not in ActivationCodes.SUBSCRIPTION_TYPES:
             return None
         # كود بصيغة OBEIDA-XXXX-XXXX
-        parts = ['OBEIDA']
+        parts = ['ObeidaTrading']
         for _ in range(2):
             parts.append(''.join(random.choices(string.ascii_uppercase + string.digits, k=4)))
         code = '-'.join(parts)
@@ -1121,6 +1121,12 @@ def _build_prompt_sol(symbol, candle, trade_time, candles_count, session):
 • نسبة نجاح الصفقة المتوقعة (V8.0): [XX]% - [التقييم: ممتاز/جيد/متوسط/ضعيف]
 • 🚨 تنبيه فخ السيولة: [نشط / غير نشط] - [إذا نشط: تفاصيل التنبيه]
 
+⚠️ **قواعد صارمة:**
+1. استخدم الأرقام من الشارت فقط — لا تخترع أسعاراً
+2. اكتب الأرقام بدون رموز عملات (1.0875 وليس $1.0875)
+3. اكتب كل حقل في سطر واحد فقط
+4. إذا لم تجد رقماً، اكتب "—" بدلاً من تخمينه
+
 الآن حلل الشارت المرفق بتركيز كامل على استخراج البيانات، وأعطني الإجابة بالتنسيق أعلاه فقط.
 """
 
@@ -1181,6 +1187,12 @@ def _build_prompt_astra(symbol, candle, trade_time, candles_count, session):
 • مستوى الثقة: [0-100]٪ = [💥/🔥/⚡/🔄/❄️/🚫]
 • نسبة نجاح الصفقة المتوقعة (V8.0): [XX]% - [التقييم: ممتاز/جيد/متوسط/ضعيف]
 • 🚨 تنبيه فخ السيولة: [نشط / غير نشط] - [إذا نشط: تفاصيل التنبيه]
+
+⚠️ **قواعد صارمة:**
+1. استخدم الأرقام من الشارت فقط — لا تخترع أسعاراً
+2. اكتب الأرقام بدون رموز عملات
+3. اكتب كل حقل في سطر واحد فقط
+4. إذا لم تجد رقماً، اكتب "—" بدلاً من تخمينه
 
 الآن حلل الشارت المرفق وأعطني الإجابة بالتنسيق أعلاه فقط.
 """
@@ -1245,6 +1257,12 @@ def _build_prompt_luna(symbol, candle, trade_time, candles_count, session):
 • نسبة نجاح الصفقة المتوقعة (V8.0): [XX]% - [التقييم: ممتاز/جيد/متوسط/ضعيف]
 • 🚨 تنبيه فخ السيولة: [نشط / غير نشط] - [إذا نشط: تفاصيل التنبيه]
 
+⚠️ **قواعد صارمة:**
+1. استخدم الأرقام من الشارت فقط — لا تخترع أسعاراً
+2. اكتب الأرقام بدون رموز عملات
+3. اكتب كل حقل في سطر واحد فقط
+4. إذا لم تجد رقماً، اكتب "—" بدلاً من تخمينه
+
 الآن حلل الشارت المرفق وأعطني الإجابة بالتنسيق أعلاه فقط.
 """
 
@@ -1257,9 +1275,10 @@ PROMPT_BUILDERS = {
 
 
 # ============================================
-# محرك التحليل الثلاثي
+# محرك التحليل الثلاثي — النسخة المُصلحة V8.1
 # ============================================
-async def _call_model(model, prompt, image_b64, max_tokens=1800):
+async def _call_model(model, prompt, image_b64, max_tokens=2500):
+    """استدعاء النموذج مع منع قطع الردود وتحسين الاتساق"""
     headers = {
         "Authorization": f"Bearer {MISTRAL_KEY}",
         "Content-Type": "application/json"
@@ -1274,50 +1293,93 @@ async def _call_model(model, prompt, image_b64, max_tokens=1800):
             ]
         }],
         "max_tokens": max_tokens,
-        "temperature": 0.15,
-        "top_p": 0.95
+        "temperature": 0.1,
+        "top_p": 0.9,
+        "frequency_penalty": 0.2,
+        "presence_penalty": 0.1
     }
     try:
         loop = asyncio.get_event_loop()
         r = await loop.run_in_executor(
             None,
-            lambda: requests.post(MISTRAL_URL, json=body, headers=headers, timeout=90)
+            lambda: requests.post(MISTRAL_URL, json=body, headers=headers, timeout=120)
         )
         if r.status_code == 200:
             return {'model': model, 'success': True,
                     'content': r.json()['choices'][0]['message']['content']}
-        return {'model': model, 'success': False, 'error': f"HTTP {r.status_code}"}
+        return {'model': model, 'success': False,
+                'error': f"HTTP {r.status_code}: {r.text[:200]}"}
     except Exception as e:
         return {'model': model, 'success': False, 'error': str(e)}
 
 
-def _extract_number(text):
+def _extract_number(text, price_hint=False):
+    """استخراج رقم بدقة مع دعم الأسعار الصغيرة والفواصل"""
     if not text:
         return None
-    m = re.search(r'-?\d+[.,]?\d*', str(text).replace(',', '.'))
-    if m:
-        try:
-            return float(m.group(0))
-        except ValueError:
-            return None
+    s = str(text).strip()
+    s = re.sub(r'[🔴🟢🟡💥🔥⚡❄️🚨🔄🎯📍🛑$€£¥]', ' ', s)
+    patterns = [
+        r'(\d{1,3}(?:,\d{3})+(?:\.\d+)?)',
+        r'(\d+\.\d+)',
+        r'(\d{5,})',
+        r'(\d+)',
+    ]
+    for pat in patterns:
+        m = re.search(pat, s)
+        if m:
+            try:
+                val = float(m.group(1).replace(',', ''))
+                return val
+            except ValueError:
+                continue
     return None
 
 
 def _map_decision(raw):
-    d = (raw or '').lower()
-    if 'شراء' in d or 'buy' in d: return 'BUY'
-    if 'بيع' in d or 'sell' in d: return 'SELL'
-    if 'كسر' in d or 'breakout' in d: return 'BREAKOUT'
-    if 'سحب سيولة' in d or 'sweep' in d: return 'SWEEP'
-    if 'انعكاس' in d or 'reversal' in d: return 'REVERSAL'
+    """تفسير القرار بأمان مع منع النفي"""
+    d = (raw or '').strip().lower()
+    if any(w in d for w in ['لا شراء', 'لا بيع', 'احتفاظ', 'hold', 'انتظار', 'wait']):
+        return 'HOLD'
     if 'فخ' in d or 'trap' in d: return 'TRAP'
+    if 'سحب سيولة' in d or 'sweep' in d or 'liquidity sweep' in d: return 'SWEEP'
+    if 'كسر هيكلي' in d or 'breakout' in d or 'bos' in d: return 'BREAKOUT'
+    if 'انعكاس' in d or 'reversal' in d or 'choch' in d: return 'REVERSAL'
+    if 'بيع' in d or 'sell' in d: return 'SELL'
+    if 'شراء' in d or 'buy' in d: return 'BUY'
     return 'HOLD'
 
 
+def _validate_price_logic(p):
+    """تصحيح الأهداف غير المنطقية بناءً على اتجاه القرار"""
+    d = p['decision']
+    entry, sl = p['entry'], p['sl']
+    if not entry or not sl:
+        return p
+    if d == 'BUY':
+        if sl >= entry: p['sl'] = None
+        for k in ('tp1', 'tp2', 'tp3'):
+            if p[k] and p[k] <= entry:
+                p[k] = None
+        tps = sorted([v for v in (p['tp1'], p['tp2'], p['tp3']) if v])
+        for i, k in enumerate(('tp1', 'tp2', 'tp3')):
+            p[k] = tps[i] if i < len(tps) else None
+    elif d == 'SELL':
+        if sl <= entry: p['sl'] = None
+        for k in ('tp1', 'tp2', 'tp3'):
+            if p[k] and p[k] >= entry:
+                p[k] = None
+        tps = sorted([v for v in (p['tp1'], p['tp2'], p['tp3']) if v], reverse=True)
+        for i, k in enumerate(('tp1', 'tp2', 'tp3')):
+            p[k] = tps[i] if i < len(tps) else None
+    return p
+
+
 def _parse_response(content):
+    """تحليل رد النموذج بدقة عالية"""
     if not content:
         return {'valid': False, 'decision': 'HOLD', 'confidence': 0}
-    
+
     text = content.strip()
     p = {
         'valid': True, 'image_valid': True, 'platform_time': None,
@@ -1330,8 +1392,8 @@ def _parse_response(content):
         'confidence': 50, 'success_rate': 50,
         'liquidity_trap': 'غير نشط', 'reasoning': '', 'raw': content
     }
-    
-    if re.search(r'الصورة غير صالحة|صورة أوضح', text):
+
+    if re.search(r'الصورة غير صالحة|صورة أوضح|invalid image', text, re.IGNORECASE):
         p['valid'] = False
         p['image_valid'] = False
         return p
@@ -1341,63 +1403,73 @@ def _parse_response(content):
         return m.group(1).strip() if m else default
 
     p['platform_time'] = grab(r'الوقت على المنصة[^:]*:\s*([^\n]+)')
-    p['structure'] = grab(r'حالة الهيكل[^:]*:\s*([^\n+]+)', 'غير محدد')
+    p['structure'] = grab(r'حالة الهيكل[^:]*:\s*([^\n+(]+)', 'غير محدد')
     agree = grab(r'توافق 4/4 إطارات[^:]*:\s*([^\n)]+)', '')
     p['timeframe_agreement'] = 'نعم' in (agree or '')
     p['liquidity_map'] = grab(r'خريطة السيولة[^:]*:\s*([^\n]+)', '')
     p['execution_window'] = grab(r'نافذة التنفيذ[^:]*:\s*\[?([^\])]+)', 'خارج')
+
     p['current_price'] = _extract_number(grab(r'السعر الحالي[^:]*:\s*([^\n]+)'))
     p['entry'] = _extract_number(grab(r'نقطة الدخول[^:]*:\s*([^\n]+)'))
     p['candle_state'] = grab(r'حالة الشمعة[^:]*:\s*([^\n]+)', '')
+
     p['decision_raw'] = grab(r'القرار الفني[^:]*:\s*([^\n]+)', 'احتفاظ')
     p['decision'] = _map_decision(p['decision_raw'])
     p['signal_strength'] = grab(r'قوة الإشارة[^:]*:\s*([^\n💥🔥⚡❄️]+)', 'متوسطة').strip()
     p['entry_type'] = grab(r'نوع الدخول[^:]*:\s*([^\n]+)', '')
     p['entry_timing'] = grab(r'وقت الدخول[^:]*:\s*([^\n]+)', '')
+
     p['tp1'] = _extract_number(grab(r'TP1[^:]*:\s*([^\n-]+)', ''))
     p['tp2'] = _extract_number(grab(r'TP2[^:]*:\s*([^\n-]+)', ''))
     p['tp3'] = _extract_number(grab(r'TP3[^:]*:\s*([^\n-]+)', ''))
     p['sl'] = _extract_number(grab(r'وقف الخسارة[^:]*:\s*([^\n-]+)', ''))
-    
+
     c = grab(r'مستوى الثقة[^:]*:\s*(\d+)', '')
-    if c:
-        try: p['confidence'] = int(c)
-        except Exception: pass
-    
+    if c and c.isdigit():
+        p['confidence'] = max(0, min(100, int(c)))
+
     sr = grab(r'نسبة نجاح الصفقة[^:]*:\s*(\d+)', '')
-    if sr:
-        try: p['success_rate'] = int(sr)
-        except Exception: pass
-    
+    if sr and sr.isdigit():
+        p['success_rate'] = max(0, min(100, int(sr)))
+
     p['liquidity_trap'] = grab(r'تنبيه فخ السيولة[^:]*:\s*([^\n-]+)', 'غير نشط')
     p['reasoning'] = p['liquidity_map']
+
+    p = _validate_price_logic(p)
     return p
 
 
 def _consensus(results):
+    """تصويت مرجّح بالثقة بدلاً من تصويت بسيط"""
     valid = [r for r in results if r.get('success') and r.get('parsed', {}).get('valid')]
-    
+
     if not valid:
         return {'decision': 'HOLD', 'confidence': 0,
                 'reasoning': 'فشل النماذج', 'votes': {},
                 'models_used': [], 'agreeing_count': 0, 'total_models': 0}
 
-    votes = {}
+    weighted = {}
+    raw_votes = {}
     for r in valid:
         d = r['parsed']['decision']
-        votes[d] = votes.get(d, 0) + 1
+        c = r['parsed'].get('confidence', 50) or 50
+        weighted[d] = weighted.get(d, 0) + c
+        raw_votes[d] = raw_votes.get(d, 0) + 1
 
-    final = max(votes, key=votes.get)
-    vc = votes[final]
+    final = max(weighted, key=weighted.get)
+    vc = raw_votes[final]
     total = len(valid)
 
     if final == 'TRAP' and vc == total:
         structures = [r['parsed'].get('structure', '') for r in valid]
         if any('صاعد' in s or 'هابط' in s for s in structures):
             final = 'REVERSAL'
+            raw_votes['REVERSAL'] = raw_votes.get('REVERSAL', 0) + vc
+            raw_votes['TRAP'] = 0
 
     agreeing = [r for r in valid if r['parsed']['decision'] == final] or valid
     avg_conf = sum(r['parsed'].get('confidence', 50) for r in agreeing) // len(agreeing)
+
     if vc == total:
         avg_conf = min(100, avg_conf + 10)
     elif vc == 2:
@@ -1408,7 +1480,8 @@ def _consensus(results):
         return sum(vals) / len(vals) if vals else None
 
     return {
-        'decision': final, 'confidence': avg_conf, 'votes': votes,
+        'decision': final, 'confidence': avg_conf,
+        'votes': {k: v for k, v in raw_votes.items() if v > 0},
         'entry': avg_level('entry'), 'sl': avg_level('sl'),
         'tp1': avg_level('tp1'), 'tp2': avg_level('tp2'), 'tp3': avg_level('tp3'),
         'reasoning': " | ".join([f"{r['model'].split('-')[-1]}:{r['parsed']['decision']}({r['parsed']['confidence']}%)" for r in valid]),
@@ -1453,32 +1526,46 @@ def _format_final(symbol, candle, trade_time, candles_count, session, cons, resu
     votes = cons.get('votes', {})
     vote_str = " | ".join([f"{k}:{v}" for k, v in votes.items() if v > 0])
 
-    structures = [r['parsed'].get('structure', '') for r in results if r.get('success')]
-    structure = structures[0] if structures else 'غير محدد'
-    agree = 'نعم' if any(r['parsed'].get('timeframe_agreement') for r in results if r.get('success')) else 'لا'
+    valid_results = [r for r in results if r.get('success') and r.get('parsed', {}).get('valid')]
+    best = valid_results[0]['parsed'] if valid_results else {}
+    structure = best.get('structure', 'غير محدد')
+    agree = 'نعم' if any(r['parsed'].get('timeframe_agreement') for r in valid_results) else 'لا'
+    platform_time = best.get('platform_time') or session['utc_time']
+    liquidity = best.get('liquidity_map', '')[:100]
+
+    entry = cons.get('entry')
+    sl = cons.get('sl')
+    tp1, tp2, tp3 = cons.get('tp1'), cons.get('tp2'), cons.get('tp3')
+
+    rr_text = ''
+    if entry and sl and tp1:
+        risk = abs(entry - sl)
+        reward = abs(tp1 - entry)
+        if risk > 0:
+            rr_text = f" (R:R ≈ 1:{reward/risk:.2f})"
 
     lines = [
         "📊 التحليل الفني المتقدم:",
         "• بروتوكول الفشل الذاتي: الصورة صالحة",
-        f"• الوقت على المنصة (المرجع): {session['utc_time']}",
+        f"• الوقت على المنصة (المرجع): {platform_time}",
         f"• حالة الهيكل: {structure} + (توافق 4/4 إطارات: {agree})",
-        f"• خريطة السيولة: {cons.get('reasoning', '')[:120]}",
+        f"• خريطة السيولة: {liquidity}",
         "• الثواني المنقضية: -- ثانية (نافذة التنفيذ: داخل النافذة الذهبية)",
         "",
         "🎯 الإشارة التنفيذية:",
-        f"• السعر الحالي: {_fmt_price(cons.get('entry'))}",
-        f"• نقطة الدخول المعدلة: {_fmt_price(cons.get('entry'))}",
+        f"• السعر الحالي: {_fmt_price(entry)}",
+        f"• نقطة الدخول المعدلة: {_fmt_price(entry)}",
         "• حالة الشمعة: مفتوحة - الوقت المتبقي: --",
         f"• القرار الفني: {dec_ar}",
         f"• قوة الإشارة: {strength} {se}",
-        f"• نقطة الدخول: {_fmt_price(cons.get('entry'))}",
+        f"• نقطة الدخول: {_fmt_price(entry)}{rr_text}",
         f"• نوع الدخول 🚨: {'دخول مباشر' if conf >= 85 else 'إعادة اختبار'}",
         f"• وقت الدخول: {'فوري (Flash)' if conf >= 90 else 'بعد إغلاق الشمعة'}",
         "• الأهداف الربحية:",
-        f"  🎯 TP1: {_fmt_price(cons.get('tp1'))} - [سحب أول سيولة داخلية] - [احتمالية الوصول: عالية]",
-        f"  🎯 TP2: {_fmt_price(cons.get('tp2'))} - [الهدف الرئيسي - منطقة عرض/طلب قوية] - [احتمالية الوصول: متوسطة]",
-        f"  🎯 TP3: {_fmt_price(cons.get('tp3'))} - [سيولة خارجية أو سد فجوة] - [احتمالية الوصول: متوسطة]",
-        f"• وقف الخسارة: {_fmt_price(cons.get('sl'))} - [مع 3 طبقات حماية]",
+        f"  🎯 TP1: {_fmt_price(tp1)} - [سحب أول سيولة داخلية] - [احتمالية الوصول: عالية]",
+        f"  🎯 TP2: {_fmt_price(tp2)} - [الهدف الرئيسي - منطقة عرض/طلب قوية] - [احتمالية الوصول: متوسطة]",
+        f"  🎯 TP3: {_fmt_price(tp3)} - [سيولة خارجية أو سد فجوة] - [احتمالية الوصول: متوسطة]",
+        f"• وقف الخسارة: {_fmt_price(sl)} - [مع 3 طبقات حماية]",
         f"• المدة المتوقعة: {_duration_text(trade_time)}",
         "• وقت الذروة المتوقع: خلال الـ 5 شموع القادمة",
         "",
@@ -1507,7 +1594,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                 "⏳ 20-35 ثانية"
             )
 
-        # فحص الصلاحية
         if user_id != ADMIN_ID:
             sub_ok, _, _ = SubscriptionSystem.check_subscription(user_id)
             if not sub_ok:
@@ -1519,7 +1605,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                         )
                     return None
 
-        # Cache check
         cache_key = f"analysis_{user_id}_{int(time.time() // 300)}"
         cached = cache_get(cache_key)
         if cached:
@@ -1572,7 +1657,6 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
         else:
             await update.message.reply_text(final, parse_mode="Markdown")
 
-        # نشر تلقائي
         if SystemSettings.get('channel_auto_post', 1) == 1:
             min_c = SystemSettings.get('channel_min_confidence', 85)
             if cons['confidence'] >= min_c and cons['decision'] not in ('HOLD', 'INVALID'):
