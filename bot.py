@@ -1605,19 +1605,20 @@ async def analyze_chart_image(update, context, image_path, candle, trade_time, s
                         )
                     return None
 
-        cache_key = f"analysis_{user_id}_{int(time.time() // 300)}"
-        cached = cache_get(cache_key)
-        if cached:
-            if wait_msg:
-                await wait_msg.edit_text(cached, parse_mode="Markdown")
-            return cached
-
         compressed = compress_image(image_path)
         b64 = encode_image(compressed)
         if not b64:
             if wait_msg:
                 await wait_msg.edit_text("❌ فشل قراءة الصورة.")
             return None
+
+        img_hash = hashlib.md5(b64.encode()).hexdigest()
+        cache_key = f"analysis_{user_id}_{symbol}_{candle}_{trade_time}_{img_hash}"
+        cached = cache_get(cache_key)
+        if cached:
+            if wait_msg:
+                await wait_msg.edit_text(cached, parse_mode="Markdown")
+            return cached
 
         session = get_market_session(user_id)
 
